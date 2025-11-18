@@ -1,0 +1,22 @@
+# OS specific
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Test and build artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Dependencies
+vendor/
+
+# IDEs
+.idea/
+.vscode/
+
+# Editor temporary files
+*.swp
+*.swo
+*~
