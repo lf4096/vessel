@@ -10,9 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGenerateUniqueID(t *testing.T) {
+func TestUniqueIDGenerator(t *testing.T) {
+	generator := NewUniqueIDGenerator()
+
 	beforeTime := uint64(time.Now().UnixMilli()) - epoch
-	id1 := GenerateUniqueID()
+	id1 := generator.NewID()
 	afterTime := uint64(time.Now().UnixMilli()) - epoch
 
 	assert.Len(t, id1, 16, "ID should be 16 characters long")
@@ -30,7 +32,11 @@ func TestGenerateUniqueID(t *testing.T) {
 	assert.GreaterOrEqual(t, timestamp, beforeTime, "Timestamp should be after start time")
 	assert.LessOrEqual(t, timestamp, afterTime, "Timestamp should be before end time")
 
-	id2 := GenerateUniqueID()
+	id2 := generator.NewID()
 
 	assert.NotEqual(t, id1, id2, "Two generated IDs should be different")
+}
+
+func TestIDGeneratorInterface(t *testing.T) {
+	var _ IDGenerator = (*UniqueIDGenerator)(nil)
 }

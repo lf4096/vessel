@@ -8,12 +8,20 @@ import (
 
 const (
 	epoch         = 1577836800000 // 2020-01-01T00:00:00Z
-	randomBits    = 22
 	timestampBits = 42
 )
 
-// GenerateUniqueID returns a monotonic-ish hex identifier that mixes time and randomness.
-func GenerateUniqueID() string {
+// UniqueIDGenerator is the default implementation of IDGenerator that produces
+// monotonic-ish hex identifiers mixing timestamp and randomness.
+type UniqueIDGenerator struct{}
+
+// NewUniqueIDGenerator creates a new UniqueIDGenerator instance.
+func NewUniqueIDGenerator() *UniqueIDGenerator {
+	return &UniqueIDGenerator{}
+}
+
+// NewID returns a unique 16-character hex identifier.
+func (g *UniqueIDGenerator) NewID() string {
 	now := uint64(time.Now().UnixMilli())
 	timestamp := now - epoch
 	randomNumber := rand.Uint64()

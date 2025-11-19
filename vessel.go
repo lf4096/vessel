@@ -51,7 +51,7 @@ func newVessel(ctx context.Context, vesselID, imageRef, workDir string, m *manag
 		manager: m,
 	}
 
-	leaseID := fmt.Sprintf("lease-%s-%s", vesselID, GenerateUniqueID())
+	leaseID := fmt.Sprintf("lease-%s-%s", vesselID, m.idGenerator.NewID())
 	v.lease, err = m.client.LeasesService().Create(ctx, leases.WithID(leaseID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create lease: %w", err)
@@ -105,7 +105,7 @@ func openVessel(ctx context.Context, vesselID string, m *manager) (Vessel, error
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}
 
-	leaseID := fmt.Sprintf("lease-%s-%s", vesselID, GenerateUniqueID())
+	leaseID := fmt.Sprintf("lease-%s-%s", vesselID, m.idGenerator.NewID())
 	v.lease, err = m.client.LeasesService().Create(ctx, leases.WithID(leaseID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create lease: %w", err)
@@ -254,9 +254,9 @@ func (v *vessel) Exec(ctx context.Context, opts *ExecOptions) (*ExecResult, erro
 		return nil, fmt.Errorf("command is required")
 	}
 
-	execID := GenerateUniqueID()
+	execID := v.manager.idGenerator.NewID()
 	if !opts.PersistResult {
-		execBaseSnapshotKey := GenerateUniqueID()
+		execBaseSnapshotKey := v.manager.idGenerator.NewID()
 		if err := v.manager.snapshotter.Commit(ctx, execBaseSnapshotKey, v.currentSnapshotKey); err != nil {
 			return nil, fmt.Errorf("failed to commit temporary snapshot: %w", err)
 		}
@@ -342,7 +342,7 @@ func (v *vessel) Exec(ctx context.Context, opts *ExecOptions) (*ExecResult, erro
 // CreateSnapshot commits the current workspace changes and persists the diff.
 func (v *vessel) CreateSnapshot(ctx context.Context, message string) (*SnapshotManifest, error) {
 	ctx = v.withLease(ctx)
-	snapshotID := GenerateUniqueID()
+	snapshotID := v.manager.idGenerator.NewID()
 	parentID := v.manifest.CurrentSnapshotID
 	if parentID == "" {
 		parentID = v.baseSnapshotKey
@@ -526,7 +526,7 @@ func (v *vessel) createNewLayer(ctx context.Context, parentSnapshotKey string) e
 		v.unmountAndCleanup(ctx)
 	}
 
-	newSnapshotKey := GenerateUniqueID()
+	newSnapshotKey := v.manager.idGenerator.NewID()
 	mounts, err := v.manager.snapshotter.Prepare(ctx, newSnapshotKey, parentSnapshotKey)
 	if err != nil {
 		return fmt.Errorf("failed to prepare snapshot: %w", err)

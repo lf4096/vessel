@@ -21,6 +21,7 @@ type manager struct {
 	storage         Storage
 	mountRoot       string
 	runRoot         string
+	idGenerator     IDGenerator
 	managerLease    leases.Lease
 	imageCache      map[string]string
 	imageMu         sync.RWMutex
@@ -99,7 +100,12 @@ func NewManager(config *ManagerConfig) (Manager, error) {
 		return nil, fmt.Errorf("failed to create mount root directory: %w", err)
 	}
 
-	leaseID := fmt.Sprintf("lease-manager-%s", GenerateUniqueID())
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = NewUniqueIDGenerator()
+	}
+
+	leaseID := fmt.Sprintf("lease-manager-%s", idGenerator.NewID())
 	managerLease, err := cli.LeasesService().Create(context.Background(), leases.WithID(leaseID))
 	if err != nil {
 		cli.Close()
@@ -112,6 +118,7 @@ func NewManager(config *ManagerConfig) (Manager, error) {
 		snapshotter:     snapshotter,
 		snapshotterName: snapshotterName,
 		storage:         storage,
+		idGenerator:     idGenerator,
 		mountRoot:       mountRoot,
 		runRoot:         runRoot,
 		managerLease:    managerLease,
@@ -121,7 +128,7 @@ func NewManager(config *ManagerConfig) (Manager, error) {
 
 // CreateVessel creates a new vessel based on image.
 func (m *manager) CreateVessel(ctx context.Context, imageRef string, workDir string) (Vessel, error) {
-	vesselID := GenerateUniqueID()
+	vesselID := m.idGenerator.NewID()
 	return newVessel(ctx, vesselID, imageRef, workDir, m)
 }
 

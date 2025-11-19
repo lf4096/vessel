@@ -1,4 +1,4 @@
-// Package vessel provides a containerized workspace for AI agents, built on containerd to 
+// Package vessel provides a containerized workspace for AI agents, built on containerd to
 // run commands, manage snapshots, and plug in custom storage.
 package vessel
 
@@ -30,6 +30,8 @@ type ManagerConfig struct {
 	Storage Storage
 	// MountRoot is the directory where vessel mounts are created, defaults to `~/.local/share/vessel/mounts`.
 	MountRoot string
+	// IDGenerator generates unique identifiers for vessels and snapshots, defaults to `UniqueIDGenerator`.
+	IDGenerator IDGenerator
 }
 
 // Vessel represents a mutable container workspace backed by snapshots.
@@ -132,4 +134,9 @@ type Storage interface {
 	DeleteSnapshot(ctx context.Context, vesselID, snapshotID string) error
 
 	DeleteVessel(ctx context.Context, vesselID string) error
+}
+
+// IDGenerator produces unique identifiers for vessels and snapshots.
+type IDGenerator interface {
+	NewID() string
 }
