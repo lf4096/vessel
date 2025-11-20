@@ -29,7 +29,7 @@ type vessel struct {
 	manifest           *VesselManifest
 	manager            *manager
 	lease              leases.Lease
-	baseSnapshotKey    string
+	image              *Image
 	currentSnapshotKey string
 	currentMounts      []mount.Mount
 	mountPoint         string
@@ -63,7 +63,7 @@ func newVessel(ctx context.Context, vesselID, imageRef, workDir string, m *manag
 		}
 	}()
 
-	v.baseSnapshotKey, err = m.getImage(ctx, imageRef)
+	v.image, err = m.getImage(ctx, imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image snapshot: %w", err)
 	}
@@ -83,7 +83,7 @@ func newVessel(ctx context.Context, vesselID, imageRef, workDir string, m *manag
 		return nil, err
 	}
 
-	if err = v.createNewLayer(ctx, v.baseSnapshotKey); err != nil {
+	if err = v.createNewLayer(ctx, v.image.SnapshotKey); err != nil {
 		return nil, err
 	}
 	return v, nil
@@ -117,14 +117,14 @@ func openVessel(ctx context.Context, vesselID string, m *manager) (Vessel, error
 		}
 	}()
 
-	v.baseSnapshotKey, err = m.getImage(ctx, v.manifest.BaseImageRef)
+	v.image, err = m.getImage(ctx, v.manifest.BaseImageRef)
 	if err != nil {
 		return nil, fmt.Errorf("base image not found: %s", v.manifest.BaseImageRef)
 	}
 
 	var parentSnapshotKey string
 	if v.manifest.CurrentSnapshotID == "" {
-		parentSnapshotKey = v.baseSnapshotKey
+		parentSnapshotKey = v.image.SnapshotKey
 	} else {
 		if err := v.ensureSnapshotChainExists(ctx, v.manifest.CurrentSnapshotID); err != nil {
 			return nil, fmt.Errorf("failed to ensure snapshot chain exists: %w", err)
@@ -276,11 +276,14 @@ func (v *vessel) Exec(ctx context.Context, opts *ExecOptions) (*ExecResult, erro
 	containerID := fmt.Sprintf("vessel-%s-exec-%s", v.id, execID)
 	specOpts := []oci.SpecOpts{
 		oci.WithDefaultSpec(),
-		oci.WithDefaultPathEnv,
+		oci.WithEnv(v.image.Config.Env),
 		oci.WithEnv(opts.Env),
 		oci.WithoutRunMount,
 		oci.WithRootFSPath(v.mountPoint),
 		oci.WithCgroup(""),
+		oci.WithHostLocaltime,
+		oci.WithHostHostsFile,
+		oci.WithHostResolvconf,
 		oci.WithProcessCwd(workDir),
 		oci.WithProcessArgs(opts.Command...),
 	}
@@ -345,7 +348,7 @@ func (v *vessel) CreateSnapshot(ctx context.Context, message string) (*SnapshotM
 	snapshotID := v.manager.idGenerator.NewID()
 	parentID := v.manifest.CurrentSnapshotID
 	if parentID == "" {
-		parentID = v.baseSnapshotKey
+		parentID = v.image.SnapshotKey
 	}
 
 	parentViewKey := parentID + "-view"
@@ -548,7 +551,7 @@ func (v *vessel) createNewLayer(ctx context.Context, parentSnapshotKey string) e
 	v.currentMounts = mounts
 	v.mountPoint = mountPoint
 
-	if parentSnapshotKey == v.baseSnapshotKey {
+	if parentSnapshotKey == v.image.SnapshotKey {
 		if err := v.ensureDirExists(v.manifest.WorkDir); err != nil {
 			return fmt.Errorf("failed to ensure workdir: %w", err)
 		}
@@ -563,7 +566,7 @@ func (v *vessel) ensureSnapshotChainExists(ctx context.Context, targetSnapshotID
 	}
 
 	differ := v.manager.client.DiffService()
-	parentSnapshotKey := v.baseSnapshotKey
+	parentSnapshotKey := v.image.SnapshotKey
 
 	for _, snap := range chain {
 		if _, err := v.manager.snapshotter.Stat(ctx, snap.ID); err == nil {

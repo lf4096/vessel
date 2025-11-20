@@ -2,7 +2,9 @@ package vessel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,7 +13,15 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/opencontainers/image-spec/identity"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+type Image struct {
+	Name        string
+	Labels      map[string]string
+	Config      ocispec.ImageConfig
+	SnapshotKey string
+}
 
 type manager struct {
 	client          *client.Client
@@ -23,7 +33,7 @@ type manager struct {
 	runRoot         string
 	idGenerator     IDGenerator
 	managerLease    leases.Lease
-	imageCache      map[string]string
+	imageCache      map[string]*Image
 	imageMu         sync.RWMutex
 }
 
@@ -122,7 +132,7 @@ func NewManager(config *ManagerConfig) (Manager, error) {
 		mountRoot:       mountRoot,
 		runRoot:         runRoot,
 		managerLease:    managerLease,
-		imageCache:      make(map[string]string),
+		imageCache:      make(map[string]*Image),
 	}, nil
 }
 
@@ -157,11 +167,11 @@ func (m *manager) Close() error {
 	return nil
 }
 
-func (m *manager) getImage(ctx context.Context, imageRef string) (string, error) {
+func (m *manager) getImage(ctx context.Context, imageRef string) (*Image, error) {
 	m.imageMu.RLock()
-	if snapshotKey, ok := m.imageCache[imageRef]; ok {
+	if image, ok := m.imageCache[imageRef]; ok {
 		m.imageMu.RUnlock()
-		return snapshotKey, nil
+		return image, nil
 	}
 	m.imageMu.RUnlock()
 
@@ -171,34 +181,57 @@ func (m *manager) getImage(ctx context.Context, imageRef string) (string, error)
 	if err != nil {
 		imageReader, err := m.storage.LoadImage(ctx, imageRef)
 		if err != nil {
-			return "", fmt.Errorf("failed to load image from storage: %w", err)
+			return nil, fmt.Errorf("failed to load image from storage: %w", err)
 		}
 		defer imageReader.Close()
 		imgs, err := m.client.Import(managerCtx, imageReader)
 		if err != nil {
-			return "", fmt.Errorf("failed to import image: %w", err)
+			return nil, fmt.Errorf("failed to import image: %w", err)
 		}
 		if len(imgs) == 0 {
-			return "", fmt.Errorf("no images imported")
+			return nil, fmt.Errorf("no images imported")
 		}
 		img, err = m.client.GetImage(managerCtx, imgs[0].Name)
 		if err != nil {
-			return "", fmt.Errorf("failed to get imported image: %w", err)
+			return nil, fmt.Errorf("failed to get imported image: %w", err)
 		}
 	}
 
 	if err := img.Unpack(managerCtx, m.snapshotterName); err != nil {
-		return "", fmt.Errorf("failed to unpack image: %w", err)
+		return nil, fmt.Errorf("failed to unpack image: %w", err)
 	}
 	diffIDs, err := img.RootFS(managerCtx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get rootfs: %w", err)
+		return nil, fmt.Errorf("failed to get rootfs: %w", err)
 	}
 	snapshotKey := identity.ChainID(diffIDs).String()
 
+	configDesc, err := img.Config(managerCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image config: %w", err)
+	}
+	configReaderAt, err := m.client.ContentStore().ReaderAt(managerCtx, configDesc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image config: %w", err)
+	}
+	defer configReaderAt.Close()
+	configReader := io.NewSectionReader(configReaderAt, 0, configDesc.Size)
+
+	var ociImage ocispec.Image
+	if err := json.NewDecoder(configReader).Decode(&ociImage); err != nil {
+		return nil, fmt.Errorf("failed to decode image config: %w", err)
+	}
+
+	image := &Image{
+		Name:        imageRef,
+		Labels:      img.Labels(),
+		Config:      ociImage.Config,
+		SnapshotKey: snapshotKey,
+	}
+
 	m.imageMu.Lock()
-	m.imageCache[imageRef] = snapshotKey
+	m.imageCache[imageRef] = image
 	m.imageMu.Unlock()
 
-	return snapshotKey, nil
+	return image, nil
 }

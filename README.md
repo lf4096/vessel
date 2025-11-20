@@ -33,12 +33,11 @@ docker pull docker.io/library/alpine:latest
 docker save docker.io/library/alpine:latest | gzip > ~/.local/share/vessel/data/images/docker.io/library/alpine:latest.tar.gz
 ```
 
-2. containerd / ctr
+2. containerd / nerdctl
 
 ```bash
-ctr -n vessel images pull docker.io/library/alpine:latest
-ctr -n vessel images export ~/.local/share/vessel/data/images/docker.io/library/alpine:latest.tar docker.io/library/alpine:latest
-gzip ~/.local/share/vessel/data/images/docker.io/library/alpine:latest.tar
+nerdctl pull docker.io/library/alpine:latest
+nerdctl save docker.io/library/alpine:latest | gzip > ~/.local/share/vessel/data/images/docker.io/library/alpine:latest.tar.gz
 ```
 
 ## Usage
